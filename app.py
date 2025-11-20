@@ -25,17 +25,51 @@ API_ENDPOINT = "https://pssrequest.cyberarklab.com/PSSAPI/API/PSSRequest"
 REQUEST_KEY = "MU*@e7y8y3umho8urh3788n@MH8eh82oeuMH28uemhuhmO8M!EY27MOHUE!2817EM712=="
 
 
+def get_odbc_driver():
+    """Detect available ODBC driver for SQL Server"""
+    drivers = [
+        'ODBC Driver 18 for SQL Server',
+        'ODBC Driver 17 for SQL Server',
+        'ODBC Driver 13 for SQL Server',
+        'ODBC Driver 11 for SQL Server',
+        'SQL Server Native Client 11.0',
+        'SQL Server'
+    ]
+    
+    available_drivers = pyodbc.drivers()
+    print(f"Available ODBC drivers: {available_drivers}")
+    
+    for driver in drivers:
+        if driver in available_drivers:
+            print(f"Using ODBC driver: {driver}")
+            return driver
+    
+    raise Exception(
+        f"No compatible SQL Server ODBC driver found.\n"
+        f"Available drivers: {available_drivers}\n\n"
+        f"Please install ODBC Driver 17 or 18 for SQL Server:\n"
+        f"  Windows: https://docs.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server\n"
+        f"  Linux: Run 'install_odbc_driver.sh'\n"
+        f"  macOS: brew install msodbcsql17"
+    )
+
+
 def get_epod_templates():
     """Fetch ePOD templates from SQL Server where template_visible = 1"""
     try:
+        driver = get_odbc_driver()
+        
         conn_str = (
-            f'DRIVER={{ODBC Driver 17 for SQL Server}};'
+            f'DRIVER={{{driver}}};'
             f'SERVER={SQL_SERVER};'
             f'DATABASE={SQL_DATABASE};'
             f'UID={SQL_USER};'
-            f'PWD={SQL_PASSWORD}'
+            f'PWD={SQL_PASSWORD};'
+            f'TrustServerCertificate=yes;'
         )
-        conn = pyodbc.connect(conn_str)
+        
+        print(f"Attempting to connect to SQL Server: {SQL_SERVER}")
+        conn = pyodbc.connect(conn_str, timeout=10)
         cursor = conn.cursor()
         
         query = "SELECT * FROM automation_epod_templates WHERE template_visable = 1"
@@ -43,18 +77,34 @@ def get_epod_templates():
         
         templates = []
         for row in cursor.fetchall():
+            # Assuming first column is ID and second is name
+            template_name = str(row[1]) if len(row) > 1 else str(row[0])
+            template_value = str(row[0])
             templates.append({
                 "text": {
                     "type": "plain_text",
-                    "text": str(row[1]) if len(row) > 1 else str(row[0])
+                    "text": template_name
                 },
-                "value": str(row[0])
+                "value": template_value
             })
         
         cursor.close()
         conn.close()
         
+        print(f"Successfully fetched {len(templates)} templates")
         return templates if templates else [{"text": {"type": "plain_text", "text": "No templates available"}, "value": "none"}]
+        
+    except pyodbc.Error as e:
+        error_msg = str(e)
+        print(f"Database error: {error_msg}")
+        
+        if "IM002" in error_msg or "Data source name not found" in error_msg:
+            print("ERROR: ODBC Driver not found!")
+            print("Please install ODBC Driver 17 or 18 for SQL Server")
+            print("See ODBC_DRIVER_INSTALL.md for instructions")
+        
+        return [{"text": {"type": "plain_text", "text": "Error: Database driver not installed"}, "value": "error"}]
+        
     except Exception as e:
         print(f"Error fetching templates: {e}")
         return [{"text": {"type": "plain_text", "text": "Error loading templates"}, "value": "error"}]
@@ -91,6 +141,17 @@ def handle_testdrive_command(ack, body, client):
     
     # Get ePOD templates
     templates = get_epod_templates()
+    
+    # Check if there was a driver error
+    if templates and templates[0]["value"] == "error":
+        try:
+            client.chat_postMessage(
+                channel=user_id,
+                text="⚠️ Database driver not installed. Please contact the administrator to install ODBC Driver 17 for SQL Server."
+            )
+        except:
+            pass
+        return
     
     # Open modal with form
     try:
@@ -351,15 +412,6 @@ def handle_final_submission(ack, body, client, view):
     ack()
     
     user_id = body["user"]["id"]
-    channel_id = None
-    
-    # Try to get channel from trigger
-    try:
-        # Get the channel where the command was invoked
-        # This requires storing it during the initial command
-        channel_id = body.get("view", {}).get("private_metadata", {})
-    except:
-        pass
     
     # Parse tdbuildJSON from private_metadata
     tdbuild_json = json.loads(view["private_metadata"])
@@ -385,6 +437,7 @@ def handle_final_submission(ack, body, client, view):
             message = "Thank you for your submission, check your email shortly for more details."
         else:
             message = "An error has occurred"
+            print(f"API Error: Status {response.status_code}, Response: {response.text}")
             
     except Exception as e:
         print(f"Error calling API: {e}")
@@ -402,5 +455,23 @@ def handle_final_submission(ack, body, client, view):
 
 # Start the app
 if __name__ == "__main__":
+    print("=" * 60)
+    print("Slack-CATestDriveApp Starting...")
+    print("=" * 60)
+    print()
+    
+    # Check for ODBC driver on startup
+    try:
+        driver = get_odbc_driver()
+        print(f"✓ ODBC Driver detected: {driver}")
+    except Exception as e:
+        print("✗ ODBC Driver Error:")
+        print(str(e))
+        print()
+        print("The app will start, but database features will not work.")
+        print("Please install ODBC Driver 17 or 18 for SQL Server.")
+        print()
+    
+    print("Starting Slack Socket Mode handler...")
     handler = SocketModeHandler(app, os.environ.get("SLACK_APP_TOKEN"))
     handler.start()
