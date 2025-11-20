@@ -47,17 +47,28 @@ def get_odbc_driver():
 
 
 def get_connection_string(driver):
-    """Get connection string with multiple fallback options"""
-    # Try TCP/IP with explicit port first
-    conn_str = (
-        f'DRIVER={{{driver}}};'
-        f'SERVER={SQL_SERVER},{SQL_PORT};'
-        f'DATABASE={SQL_DATABASE};'
-        f'UID={SQL_USER};'
-        f'PWD={SQL_PASSWORD};'
-        f'TrustServerCertificate=yes;'
-        f'Encrypt=yes;'
-    )
+    """Get connection string optimized for ODBC Driver 18"""
+    # ODBC Driver 18 requires special handling for SSL
+    if 'ODBC Driver 18' in driver:
+        # Use Encrypt=optional for maximum compatibility
+        conn_str = (
+            f'DRIVER={{{driver}}};'
+            f'SERVER={SQL_SERVER},{SQL_PORT};'
+            f'DATABASE={SQL_DATABASE};'
+            f'UID={SQL_USER};'
+            f'PWD={SQL_PASSWORD};'
+            f'Encrypt=optional;'
+        )
+    else:
+        # Older drivers use simpler connection string
+        conn_str = (
+            f'DRIVER={{{driver}}};'
+            f'SERVER={SQL_SERVER},{SQL_PORT};'
+            f'DATABASE={SQL_DATABASE};'
+            f'UID={SQL_USER};'
+            f'PWD={SQL_PASSWORD};'
+        )
+    
     return conn_str
 
 
@@ -97,13 +108,13 @@ def get_epod_templates():
         error_msg = str(e)
         print(f"Database error: {error_msg}")
         
-        if "08001" in error_msg or "timeout" in error_msg.lower():
+        if "SSL" in error_msg or "certificate" in error_msg:
+            print("ERROR: SSL certificate validation failed")
+            print("This is usually fixed by using Encrypt=optional")
+            print("Please run: python test_db.py")
+        elif "08001" in error_msg or "timeout" in error_msg.lower():
             print("ERROR: Cannot connect to SQL Server")
-            print("Possible causes:")
-            print("  - VPN required to access the server")
-            print("  - Firewall blocking connection")
-            print("  - Server is not accessible from your network")
-            print("  - Your IP address is not whitelisted")
+            print("Check VPN connection or network access")
         elif "IM002" in error_msg:
             print("ERROR: ODBC Driver not found!")
         
@@ -151,7 +162,7 @@ def handle_testdrive_command(ack, body, client):
         try:
             client.chat_postMessage(
                 channel=user_id,
-                text="⚠️ Cannot connect to database. Please contact the administrator.\n\nThe SQL Server may require VPN access or your IP needs to be whitelisted."
+                text="⚠️ Cannot connect to database. Please contact the administrator."
             )
         except:
             pass
@@ -483,9 +494,7 @@ if __name__ == "__main__":
             print(f"✓ Database connection OK ({len(templates)} templates available)")
         else:
             print("✗ Database connection FAILED")
-            print("  The app will start, but /testdrive may not work properly.")
-            print("  Check that you have VPN access or network connectivity to:")
-            print(f"  {SQL_SERVER}")
+            print("  Run: python test_db.py for diagnostics")
     except Exception as e:
         print(f"✗ Database test failed: {e}")
     
