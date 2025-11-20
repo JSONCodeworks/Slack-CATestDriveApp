@@ -19,6 +19,7 @@ SQL_SERVER = "public-mssql-db-01.c4oalnzekxpd.us-west-1.rds.amazonaws.com"
 SQL_USER = "admin"
 SQL_PASSWORD = "TowerFlameWater123!!"
 SQL_DATABASE = "master"
+SQL_PORT = "1433"
 
 # API configuration
 API_ENDPOINT = "https://pssrequest.cyberarklab.com/PSSAPI/API/PSSRequest"
@@ -37,38 +38,36 @@ def get_odbc_driver():
     ]
     
     available_drivers = pyodbc.drivers()
-    print(f"Available ODBC drivers: {available_drivers}")
     
     for driver in drivers:
         if driver in available_drivers:
-            print(f"Using ODBC driver: {driver}")
             return driver
     
-    raise Exception(
-        f"No compatible SQL Server ODBC driver found.\n"
-        f"Available drivers: {available_drivers}\n\n"
-        f"Please install ODBC Driver 17 or 18 for SQL Server:\n"
-        f"  Windows: https://docs.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server\n"
-        f"  Linux: Run 'install_odbc_driver.sh'\n"
-        f"  macOS: brew install msodbcsql17"
+    raise Exception(f"No SQL Server ODBC driver found. Available: {available_drivers}")
+
+
+def get_connection_string(driver):
+    """Get connection string with multiple fallback options"""
+    # Try TCP/IP with explicit port first
+    conn_str = (
+        f'DRIVER={{{driver}}};'
+        f'SERVER={SQL_SERVER},{SQL_PORT};'
+        f'DATABASE={SQL_DATABASE};'
+        f'UID={SQL_USER};'
+        f'PWD={SQL_PASSWORD};'
+        f'TrustServerCertificate=yes;'
+        f'Encrypt=yes;'
     )
+    return conn_str
 
 
 def get_epod_templates():
     """Fetch ePOD templates from SQL Server where template_visible = 1"""
     try:
         driver = get_odbc_driver()
+        conn_str = get_connection_string(driver)
         
-        conn_str = (
-            f'DRIVER={{{driver}}};'
-            f'SERVER={SQL_SERVER};'
-            f'DATABASE={SQL_DATABASE};'
-            f'UID={SQL_USER};'
-            f'PWD={SQL_PASSWORD};'
-            f'TrustServerCertificate=yes;'
-        )
-        
-        print(f"Attempting to connect to SQL Server: {SQL_SERVER}")
+        print(f"Connecting to SQL Server: {SQL_SERVER}...")
         conn = pyodbc.connect(conn_str, timeout=10)
         cursor = conn.cursor()
         
@@ -98,12 +97,17 @@ def get_epod_templates():
         error_msg = str(e)
         print(f"Database error: {error_msg}")
         
-        if "IM002" in error_msg or "Data source name not found" in error_msg:
+        if "08001" in error_msg or "timeout" in error_msg.lower():
+            print("ERROR: Cannot connect to SQL Server")
+            print("Possible causes:")
+            print("  - VPN required to access the server")
+            print("  - Firewall blocking connection")
+            print("  - Server is not accessible from your network")
+            print("  - Your IP address is not whitelisted")
+        elif "IM002" in error_msg:
             print("ERROR: ODBC Driver not found!")
-            print("Please install ODBC Driver 17 or 18 for SQL Server")
-            print("See ODBC_DRIVER_INSTALL.md for instructions")
         
-        return [{"text": {"type": "plain_text", "text": "Error: Database driver not installed"}, "value": "error"}]
+        return [{"text": {"type": "plain_text", "text": "Error: Cannot connect to database"}, "value": "error"}]
         
     except Exception as e:
         print(f"Error fetching templates: {e}")
@@ -142,12 +146,12 @@ def handle_testdrive_command(ack, body, client):
     # Get ePOD templates
     templates = get_epod_templates()
     
-    # Check if there was a driver error
+    # Check if there was a database error
     if templates and templates[0]["value"] == "error":
         try:
             client.chat_postMessage(
                 channel=user_id,
-                text="⚠️ Database driver not installed. Please contact the administrator to install ODBC Driver 17 for SQL Server."
+                text="⚠️ Cannot connect to database. Please contact the administrator.\n\nThe SQL Server may require VPN access or your IP needs to be whitelisted."
             )
         except:
             pass
@@ -469,9 +473,22 @@ if __name__ == "__main__":
         print(str(e))
         print()
         print("The app will start, but database features will not work.")
-        print("Please install ODBC Driver 17 or 18 for SQL Server.")
         print()
     
-    print("Starting Slack Socket Mode handler...")
+    # Test database connection on startup
+    print("\nTesting database connection...")
+    try:
+        templates = get_epod_templates()
+        if templates and templates[0]["value"] != "error":
+            print(f"✓ Database connection OK ({len(templates)} templates available)")
+        else:
+            print("✗ Database connection FAILED")
+            print("  The app will start, but /testdrive may not work properly.")
+            print("  Check that you have VPN access or network connectivity to:")
+            print(f"  {SQL_SERVER}")
+    except Exception as e:
+        print(f"✗ Database test failed: {e}")
+    
+    print("\nStarting Slack Socket Mode handler...")
     handler = SocketModeHandler(app, os.environ.get("SLACK_APP_TOKEN"))
     handler.start()
