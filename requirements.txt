@@ -1,5 +1,5 @@
 slack-bolt==1.18.0
 slack-sdk==3.23.0
 python-dotenv==1.0.0
-pyodbc==5.0.1
+pyodbc==5.2.0
 requests==2.31.0
