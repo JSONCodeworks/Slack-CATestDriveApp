@@ -1,0 +1,36 @@
+{
+  "display_information": {
+    "name": "Slack-CATestDriveApp",
+    "description": "CyberArk Test Drive deployment request form",
+    "background_color": "#2c2d30"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Test Drive Bot",
+      "always_online": true
+    },
+    "slash_commands": [
+      {
+        "command": "/testdrive",
+        "description": "Submit a test drive request",
+        "usage_hint": "",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "chat:write",
+        "commands",
+        "users:read",
+        "users:read.email"
+      ]
+    }
+  },
+  "settings": {
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}
