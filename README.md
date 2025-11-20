@@ -13,7 +13,7 @@ A Slack application for managing CyberArk Test Drive deployment requests. This a
 
 ## Prerequisites
 
-- Python 3.8 or higher
+- **Python 3.8 to 3.13** (Note: Python 3.14+ is not yet fully supported by pyodbc)
 - Slack workspace with admin access
 - ODBC Driver 17 for SQL Server installed
 - Access to SQL Server database
@@ -21,7 +21,23 @@ A Slack application for managing CyberArk Test Drive deployment requests. This a
 
 ## Installation
 
-### 1. Install ODBC Driver
+### 1. Python Version Check
+
+**Important**: If you're using Python 3.14, you may encounter compilation errors with pyodbc. Use Python 3.13 or earlier for best compatibility.
+
+Check your Python version:
+```bash
+python --version
+# or
+python3 --version
+```
+
+If you have Python 3.14 and need an older version, you can:
+- **Windows**: Download Python 3.13 from [python.org](https://www.python.org/downloads/)
+- **macOS**: Use pyenv: `brew install pyenv && pyenv install 3.13`
+- **Linux**: Use pyenv or your distribution's package manager
+
+### 2. Install ODBC Driver
 
 **Linux (Ubuntu/Debian):**
 ```bash
@@ -41,21 +57,48 @@ brew install msodbcsql17
 **Windows:**
 Download and install from [Microsoft Download Center](https://docs.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server)
 
-### 2. Clone Repository
+### 3. Clone Repository
 
 ```bash
 git clone https://github.com/JSONCodeworks/Slack-CATestDriveApp.git
 cd Slack-CATestDriveApp
 ```
 
-### 3. Install Python Dependencies
+### 4. Install Python Dependencies
 
+**Option 1: Using pip directly**
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Set Up Slack App
+**Option 2: Using the setup script (Linux/macOS)**
+```bash
+./setup.sh
+```
 
+**Windows users**: If you encounter pyodbc compilation errors, try:
+```bash
+# Install pre-built wheel
+pip install --only-binary :all: pyodbc
+
+# Or if that doesn't work, try older pyodbc version
+pip install pyodbc==4.0.39
+```
+
+### 5. Set Up Slack App
+
+1. Go to [Slack API](https://api.slack.com/apps)
+2. Click "Create New App" → "From an app manifest"
+3. Select your workspace
+4. Paste the contents of `manifest.json` from this repository
+5. Review permissions and create the app
+6. Navigate to "OAuth & Permissions" and install to workspace
+7. Copy the "Bot User OAuth Token" (starts with `xoxb-`)
+8. Navigate to "Socket Mode" (should already be enabled from manifest)
+9. Generate an App-Level Token with `connections:write` scope
+10. Copy the App-Level Token (starts with `xapp-`)
+
+Alternatively, set up manually:
 1. Go to [Slack API](https://api.slack.com/apps)
 2. Click "Create New App" → "From scratch"
 3. Name it "Slack-CATestDriveApp" and select your workspace
@@ -74,7 +117,7 @@ pip install -r requirements.txt
     - Request URL: Not needed (using Socket Mode)
     - Short Description: "Submit a test drive request"
 
-### 5. Configure Environment Variables
+### 6. Configure Environment Variables
 
 ```bash
 cp .env.example .env
@@ -187,7 +230,10 @@ Slack-CATestDriveApp/
 ├── requirements.txt    # Python dependencies
 ├── .env.example       # Environment variables template
 ├── .env               # Your environment variables (not in git)
-└── README.md          # This file
+├── README.md          # This file
+├── manifest.json      # Slack app manifest
+├── setup.sh           # Setup script (Linux/macOS)
+└── test_db.py         # Database connectivity test
 ```
 
 ### Testing
@@ -199,22 +245,78 @@ Test the slash command in your Slack workspace:
 4. Verify the JSON output
 5. Submit and check logs for API response
 
+### Database Testing
+
+Test your SQL Server connection:
+```bash
+python test_db.py
+```
+
+This will verify connectivity and show available templates.
+
 ## Troubleshooting
 
+### Python 3.14 Compatibility Issues
+
+**Problem**: pyodbc fails to compile with errors like `'_PyLong_AsByteArray': function does not take 5 arguments`
+
+**Solution**:
+1. Use Python 3.13 or earlier (recommended)
+2. Or try installing a pre-built wheel:
+   ```bash
+   pip install --only-binary :all: pyodbc
+   ```
+3. Or use an older pyodbc version:
+   ```bash
+   pip install pyodbc==4.0.39
+   ```
+
 ### ODBC Driver Issues
-If you get "Driver not found" errors:
+
+**Problem**: "Driver not found" errors
+
+**Solutions**:
 - Verify ODBC Driver 17 is installed: `odbcinst -q -d`
 - Check driver name in connection string matches installed version
+- Windows: Ensure you have the correct architecture (32-bit vs 64-bit)
 
 ### Database Connection Issues
+
+**Problems**: Connection timeouts, authentication failures
+
+**Solutions**:
 - Verify network access to SQL Server
 - Check credentials and database name
-- Test connection with a SQL client first
+- Test connection with a SQL client first (SQL Server Management Studio, Azure Data Studio)
+- Check firewall rules
 
 ### Slack Connection Issues
-- Ensure Socket Mode is enabled
-- Verify both tokens are correct (Bot and App-Level)
+
+**Problems**: App doesn't respond to commands
+
+**Solutions**:
+- Ensure Socket Mode is enabled in Slack app settings
+- Verify both tokens are correct (Bot Token and App-Level Token)
 - Check that required scopes are granted
+- Look for errors in app.py console output
+
+### Import Errors
+
+**Problem**: `ModuleNotFoundError` for slack_bolt, pyodbc, etc.
+
+**Solution**:
+```bash
+# Ensure you're in the correct directory
+cd Slack-CATestDriveApp
+
+# Install all requirements
+pip install -r requirements.txt
+
+# Or if using virtual environment
+source venv/bin/activate  # Linux/macOS
+venv\Scripts\activate   # Windows
+pip install -r requirements.txt
+```
 
 ## Security Notes
 
@@ -222,6 +324,7 @@ If you get "Driver not found" errors:
 - The SQL credentials and API keys are hardcoded for this specific deployment
 - Consider implementing additional authentication for production use
 - Rotate API keys regularly
+- Review Slack app permissions regularly
 
 ## Support
 
@@ -229,6 +332,7 @@ For issues or questions:
 - Check Slack app logs in the Slack API dashboard
 - Review application logs (`python app.py` output)
 - Verify all prerequisites are met
+- Test database connectivity with `test_db.py`
 
 ## License
 
